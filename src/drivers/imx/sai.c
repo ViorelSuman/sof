@@ -401,13 +401,21 @@ static int sai_get_hw_params(struct dai *dai,
 			     struct sof_ipc_stream_params *params,
 			     int dir)
 {
-	struct sai_pdata *sai = dai_get_drvdata(dai);
-
-	/* SAI only currently supports these parameters */
-	params->rate = sai->params.fsync_rate;
-	params->channels = 2;
+	params->rate = 0;
+	params->channels = 0;
 	params->buffer_fmt = 0;
 	params->frame_fmt = SOF_IPC_FRAME_S32_LE;
+
+	return 0;
+}
+
+static int sai_hw_params(struct dai *dai,
+			 struct sof_ipc_stream_params *params)
+{
+//	struct sai_pdata *sai = dai_get_drvdata(dai);
+
+	dai_info(dai, "sai_hw_params(): rate: %u, channels: %u, fmt: %u",
+		 params->rate, params->channels, params->frame_fmt);
 
 	return 0;
 }
@@ -426,5 +434,6 @@ const struct dai_driver sai_driver = {
 		.get_handshake		= sai_get_handshake,
 		.get_fifo		= sai_get_fifo,
 		.get_hw_params		= sai_get_hw_params,
+		.hw_params		= sai_hw_params,
 	},
 };
