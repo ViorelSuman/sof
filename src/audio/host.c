@@ -797,6 +797,8 @@ static int host_params(struct comp_dev *dev,
 	hd->copy = hd->copy_type == COMP_COPY_ONE_SHOT ? host_copy_one_shot :
 		host_copy_normal;
 
+	comp_err(dev, "host_params(): copy_type: %d", hd->copy_type);
+
 	/* set processing function */
 	hd->process =
 		pcm_get_conversion_function(hd->local_buffer->stream.frame_fmt,

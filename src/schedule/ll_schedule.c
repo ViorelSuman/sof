@@ -253,6 +253,7 @@ static int schedule_ll_domain_set(struct ll_schedule_data *sch,
 	bool registered;
 	int ret;
 
+	tr_err(&ll_tr, "schedule_ll_domain_set: before register domain");
 	ret = domain_register(sch->domain, period, task, &schedule_ll_tasks_run,
 			      sch);
 	if (ret < 0) {
@@ -263,9 +264,11 @@ static int schedule_ll_domain_set(struct ll_schedule_data *sch,
 
 	spin_lock(&sch->domain->lock);
 
-	tr_dbg(&ll_tr, "task->start %u next_tick %u",
+	tr_info(&ll_tr, "task->start %u next_tick %u",
 	       (unsigned int)task->start,
 	       (unsigned int)sch->domain->next_tick);
+
+	tr_info(&ll_tr, "period: %u start %u", (unsigned int)period, (unsigned int)start);
 
 	task_start_us = period ? period : start;
 	task_start_ticks = sch->domain->ticks_per_ms * task_start_us / 1000;
