@@ -132,6 +132,7 @@ struct dai_plat_fifo_data {
 	uint32_t depth;
 	uint32_t watermark;
 	uint32_t handshake;
+	uint32_t burst_elems;
 };
 
 /**

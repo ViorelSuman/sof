@@ -393,7 +393,9 @@ static void dai_data_config(struct comp_dev *dev)
 		dd->stream_id = dd->dai_config->alh.stream_id;
 		break;
 	case SOF_DAI_IMX_SAI:
-		COMPILER_FALLTHROUGH;
+		dd->config.burst_elems =
+			dd->dai->plat_data.fifo[dai->direction].burst_elems;
+		break;
 	case SOF_DAI_IMX_ESAI:
 		dd->config.burst_elems =
 			dd->dai->plat_data.fifo[dai->direction].depth;
@@ -622,6 +624,8 @@ static int dai_params(struct comp_dev *dev,
 
 	/* calculate DMA buffer size */
 	buffer_size = ALIGN_UP(period_count * period_bytes, align);
+
+//	dd->config.burst_elems = params->rate / 48000;
 
 	/* alloc DMA buffer or change its size if exists */
 	if (dd->dma_buffer) {
@@ -1120,11 +1124,12 @@ static int dai_copy(struct comp_dev *dev)
 	copy_bytes = samples * sampling;
 
 	buffer_unlock(buf, flags);
-
-	comp_dbg(dev, "dai_copy(), dir: %d copy_bytes= 0x%x, frames= %d",
-		 dev->direction, copy_bytes,
-		 samples / buf->stream.channels);
-
+/*
+ *	comp_info(dev, "dai_copy(), dir: %d copy_bytes= 0x%x, frames= %d",
+ *		 dev->direction, copy_bytes,
+ *		 samples / buf->stream.channels);
+ *	comp_info(dev, "dai_copy(): src samples %d, sink_samples %d", src_samples, sink_samples);
+ */
 	/* Check possibility of glitch occurrence */
 	if (dev->direction == SOF_IPC_STREAM_PLAYBACK &&
 	    copy_bytes + avail_bytes < dd->period_bytes)

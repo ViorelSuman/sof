@@ -24,11 +24,16 @@ static SHARED_DATA struct dai sai[] = {
 			.depth = 128, /* in 4 bytes words */
 			/* Handshake is SDMA hardware event */
 			.handshake = 1,
+			.watermark = 128 - REG_SAI_MAXBURST_TX,
+			// .watermark = 20,
+			.burst_elems = REG_SAI_MAXBURST_TX,
 		},
 		.fifo[SOF_IPC_STREAM_CAPTURE] = {
 			.offset = SAI_1_BASE + REG_SAI_RDR0,
 			.depth = 128, /* in 4 bytes words */
 			.handshake = 0,
+			.watermark = REG_SAI_MAXBURST_RX - 1,
+			.burst_elems = REG_SAI_MAXBURST_RX,
 		},
 	},
 	.drv = &sai_driver,
@@ -43,11 +48,15 @@ static SHARED_DATA struct dai sai[] = {
 			.depth = 128, /* in 4 bytes words */
 			/* Handshake is SDMA hardware event */
 			.handshake = 5,
+			.watermark = 128 - REG_SAI_MAXBURST_TX,
+			.burst_elems = REG_SAI_MAXBURST_TX,
 		},
 		.fifo[SOF_IPC_STREAM_CAPTURE] = {
 			.offset = SAI_3_BASE + REG_SAI_RDR0,
 			.depth = 128, /* in 4 bytes words */
 			.handshake = 4,
+			.watermark = REG_SAI_MAXBURST_RX - 1,
+			.burst_elems = REG_SAI_MAXBURST_RX,
 		},
 	},
 	.drv = &sai_driver,
