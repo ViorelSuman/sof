@@ -329,8 +329,10 @@ static int sai_hw_params(struct dai *dai,
 	uint32_t slots = (channels == 1) ? 2 : channels;
 	uint32_t slot_width = word_width;
 	uint32_t pins, bclk, ratio, div;
-	uint32_t tx_wm = 64 - REG_SAI_MAXBURST_TX + (rate - 48000) / 5250;
+	uint32_t tx_wm = dai->plat_data.fifo[DAI_DIR_PLAYBACK].depth;
 	int ret;
+
+	tx_wm = tx_wm / (rate > 96000 ? 1 : 2) - REG_SAI_MAXBURST_TX;
 
 	dai_info(dai, "sai_hw_params(): rate: %u, channels: %u, width: %u",
 		 rate, channels, word_width);
