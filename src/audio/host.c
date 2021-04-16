@@ -696,7 +696,7 @@ static int host_params(struct comp_dev *dev,
 		return -EINVAL;
 	}
 
-	period_bytes = dev->frames *
+	period_bytes = MAX(48, dev->frames) *
 		audio_stream_frame_bytes(&hd->local_buffer->stream);
 
 	if (!period_bytes) {

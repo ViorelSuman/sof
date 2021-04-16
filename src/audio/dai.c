@@ -614,7 +614,7 @@ static int dai_params(struct comp_dev *dev,
 				     dd->local_buffer->stream.channels);
 
 	/* calculate period size */
-	period_bytes = dev->frames * frame_size;
+	period_bytes = MAX(48, dev->frames) * frame_size;
 	if (!period_bytes) {
 		comp_err(dev, "dai_params(): invalid period_bytes.");
 		return -EINVAL;
