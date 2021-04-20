@@ -35,7 +35,7 @@ dnl     time_domain, sched_comp, dynamic)
 # Low Latency playback pipeline 1 on PCM 0 using max 8 channels of s32le.
 # Set 500us deadline on core 0 with priority 0
 PIPELINE_PCM_ADD(sof/pipe-passthrough-playback.m4,
-	1, 0, 2, s32le,
+	1, 0, 8, s32le,
 	500, 0, 0,
 	8000, 768000, 768000)
 
