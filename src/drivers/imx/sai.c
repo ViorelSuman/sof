@@ -320,6 +320,8 @@ static int sai_hw_params(struct dai *dai,
 			 struct sof_ipc_stream_params *params)
 {
 	struct sai_pdata *sai = dai_get_drvdata(dai);
+	struct dai * const *cdai = &dai;
+	struct dai_data *dd = container_of(cdai, struct dai_data, dai);
 	bool rx = (params->direction == DAI_DIR_CAPTURE);
 	uint32_t rate = params->rate;
 	uint32_t channels = params->channels;
@@ -338,6 +340,7 @@ static int sai_hw_params(struct dai *dai,
 		 rate, channels, word_width);
 
 	dai_info(dai, "sai_hw_params(): tx_wm: %u", tx_wm);
+	dai_info(dai, "sai_hw_params(): dd->config.cyclic: %u", dd->config.cyclic);
 
 	if (sai->params.tdm_slots)
 		slots = sai->params.tdm_slots;

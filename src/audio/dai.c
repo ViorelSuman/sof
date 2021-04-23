@@ -8,7 +8,6 @@
 #include <sof/audio/buffer.h>
 #include <sof/audio/component_ext.h>
 #include <sof/audio/format.h>
-#include <sof/audio/pcm_converter.h>
 #include <sof/audio/pipeline.h>
 #include <sof/common.h>
 #include <sof/debug/panic.h>
@@ -43,33 +42,6 @@ DECLARE_SOF_RT_UUID("dai", dai_comp_uuid, 0xc2b00d27, 0xffbc, 0x4150,
 		 0xa5, 0x1a, 0x24, 0x5c, 0x79, 0xc5, 0xe5, 0x4b);
 
 DECLARE_TR_CTX(dai_comp_tr, SOF_UUID(dai_comp_uuid), LOG_LEVEL_INFO);
-
-struct dai_data {
-	/* local DMA config */
-	struct dma_chan_data *chan;
-	uint32_t stream_id;
-	struct dma_sg_config config;
-	struct comp_buffer *dma_buffer;
-	struct comp_buffer *local_buffer;
-	struct timestamp_cfg ts_config;
-	struct dai *dai;
-	struct dma *dma;
-	struct dai_group *group;	/**< NULL if no group assigned */
-	int xrun;		/* true if we are doing xrun recovery */
-
-	pcm_converter_func process;	/* processing function */
-
-	uint32_t dai_pos_blks;	/* position in bytes (nearest block) */
-	uint64_t start_position;	/* position on start */
-	uint32_t period_bytes;	/**< number of bytes per one period */
-
-	/* host can read back this value without IPC */
-	uint64_t *dai_pos;
-
-	struct sof_ipc_dai_config *dai_config;	/* dai_config from the host */
-
-	uint64_t wallclock;	/* wall clock at stream start */
-};
 
 static void dai_atomic_trigger(void *arg, enum notify_id type, void *data);
 

@@ -17,8 +17,10 @@
 #define __SOF_LIB_DAI_H__
 
 #include <platform/lib/dai.h>
+#include <sof/audio/pcm_converter.h>
 #include <sof/bit.h>
 #include <sof/list.h>
+#include <sof/lib/dma.h>
 #include <sof/lib/io.h>
 #include <sof/lib/memory.h>
 #include <sof/list.h>
@@ -162,6 +164,33 @@ struct dai_type_info {
 	uint32_t type;		/**< Type */
 	struct dai *dai_array;	/**< Array of DAIs */
 	size_t num_dais;	/**< Number of elements in dai_array */
+};
+
+struct dai_data {
+	/* local DMA config */
+	struct dma_chan_data *chan;
+	uint32_t stream_id;
+	struct dma_sg_config config;
+	struct comp_buffer *dma_buffer;
+	struct comp_buffer *local_buffer;
+	struct timestamp_cfg ts_config;
+	struct dai *dai;
+	struct dma *dma;
+	struct dai_group *group;	/**< NULL if no group assigned */
+	int xrun;		/* true if we are doing xrun recovery */
+
+	pcm_converter_func process;	/* processing function */
+
+	uint32_t dai_pos_blks;	/* position in bytes (nearest block) */
+	uint64_t start_position;	/* position on start */
+	uint32_t period_bytes;	/**< number of bytes per one period */
+
+	/* host can read back this value without IPC */
+	uint64_t *dai_pos;
+
+	struct sof_ipc_dai_config *dai_config;	/* dai_config from the host */
+
+	uint64_t wallclock;	/* wall clock at stream start */
 };
 
 /* dai tracing */
