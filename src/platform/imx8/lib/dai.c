@@ -59,6 +59,7 @@ static SHARED_DATA struct dai sai[] = {
 			.handshake	= EDMA_HANDSHAKE(EDMA0_SAI_CHAN_RX_IRQ,
 							 EDMA0_SAI_CHAN_RX),
 		},
+		.irq = 24,
 	},
 	.drv = &sai_driver,
 },

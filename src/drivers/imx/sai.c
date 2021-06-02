@@ -27,6 +27,10 @@ DECLARE_TR_CTX(sai_tr, SOF_UUID(sai_uuid), LOG_LEVEL_INFO);
 #define REG_TX_DIR 0
 #define REG_RX_DIR 1
 
+#define REG_SAI_FLAGS (REG_SAI_CSR_SEIE |\
+		REG_SAI_CSR_FEIE |\
+		REG_SAI_CSR_WSIE)
+
 static void sai_start(struct dai *dai, int direction)
 {
 	dai_info(dai, "SAI: sai_start");
@@ -95,6 +99,9 @@ static void sai_start(struct dai *dai, int direction)
 	/* transmitter/receiver enable */
 	dai_update_bits(dai, REG_SAI_XCSR(direction),
 			REG_SAI_CSR_TERE, REG_SAI_CSR_TERE);
+	/* interrupts enable */
+	dai_update_bits(dai, REG_SAI_XCSR(direction),
+			REG_SAI_CSR_XIE_MASK, REG_SAI_FLAGS);
 }
 
 static void sai_stop(struct dai *dai, int direction)
@@ -341,9 +348,85 @@ static int sai_trigger(struct dai *dai, int cmd, int direction)
 	return 0;
 }
 
+static void sai_irq_handler(void *data)
+{
+	struct dai *dai = data;
+	uint32_t flags, xcsr, mask;
+
+	dai_info(dai, "SAI: sai_irq_handler");
+
+	mask = (REG_SAI_FLAGS >> REG_SAI_CSR_XIE_SHIFT) << REG_SAI_CSR_XF_SHIFT;
+	/* Tx IRQ */
+	xcsr = dai_read(dai, REG_SAI_TCSR);
+	flags = xcsr & mask;
+
+	if (!flags)
+		goto irq_rx;
+
+	if (flags & REG_SAI_CSR_WSF)
+		dai_err(dai, "isr: Start of Tx word detected\n");
+
+	if (flags & REG_SAI_CSR_SEF)
+		dai_err(dai, "isr: Tx Frame sync error detected\n");
+
+	if (flags & REG_SAI_CSR_FEF) {
+		dai_err(dai, "isr: Transmit underrun detected\n");
+		/* FIFO reset for safety */
+		xcsr |= REG_SAI_CSR_FR;
+	}
+
+	if (flags & REG_SAI_CSR_FWF)
+		dai_err(dai, "isr: Enabled transmit FIFO is empty\n");
+
+	if (flags & REG_SAI_CSR_FRF)
+		dai_err(dai, "isr: Transmit FIFO watermark has been reached\n");
+
+	flags &= REG_SAI_CSR_XF_W_MASK;
+	xcsr &= ~REG_SAI_CSR_XF_MASK;
+
+	if (flags)
+		dai_write(dai, REG_SAI_TCSR, flags | xcsr);
+
+irq_rx:
+	/* Rx IRQ */
+	xcsr = dai_read(dai, REG_SAI_TCSR);
+	flags = xcsr & mask;
+
+	if (!flags)
+		return;
+
+	if (flags & REG_SAI_CSR_WSF)
+		dai_err(dai, "isr: Start of Rx word detected\n");
+
+	if (flags & REG_SAI_CSR_SEF)
+		dai_err(dai, "isr: Rx Frame sync error detected\n");
+
+	if (flags & REG_SAI_CSR_FEF) {
+		dai_err(dai, "isr: Receive overflow detected\n");
+		/* FIFO reset for safety */
+		xcsr |= REG_SAI_CSR_FR;
+	}
+
+	if (flags & REG_SAI_CSR_FWF)
+		dai_err(dai, "isr: Enabled receive FIFO is full\n");
+
+	if (flags & REG_SAI_CSR_FRF)
+		dai_err(dai, "isr: Receive FIFO watermark has been reached\n");
+
+	flags &= REG_SAI_CSR_XF_W_MASK;
+	xcsr &= ~REG_SAI_CSR_XF_MASK;
+
+	if (flags)
+		dai_write(dai, REG_SAI_TCSR, flags | xcsr);
+}
+
+#define sai_irq(sai) sai->plat_data.irq
+#define sai_irq_name(sai) sai->plat_data.irq_name
+
 static int sai_probe(struct dai *dai)
 {
 	struct sai_pdata *sai;
+	int ret, irq = sai_irq(dai);
 
 	dai_info(dai, "SAI: sai_probe");
 
@@ -376,6 +459,27 @@ static int sai_probe(struct dai *dai)
 	dai_write(dai, REG_SAI_RCR4, 0U);
 	dai_write(dai, REG_SAI_RCR5, 0U);
 	dai_write(dai, REG_SAI_RMR,  0U);
+
+	/* register our IRQ handler */
+	sai->irq = irqstr_get_sof_int(irq, true);
+	if (sai->irq < 0) {
+		dai_err(dai, "sai failed to get IRQ: %d", irq);
+		rfree(sai);
+		return sai->irq;
+	}
+
+	ret = interrupt_register(sai->irq, sai_irq_handler, dai);
+	if (ret < 0) {
+		dai_err(dai, "sai failed to allocate IRQ");
+		rfree(sai);
+		return ret;
+	}
+
+	dai_err(dai, "before enable sai in IRQ: %i, out IRQ: %d", irq, sai->irq);
+
+	interrupt_enable(sai->irq, dai);
+
+	dai_err(dai, "sai IRQ=%d:%d", irq, sai->irq);
 
 	return 0;
 }

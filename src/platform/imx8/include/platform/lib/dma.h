@@ -19,7 +19,7 @@
 #define DMA_ID_HOST	1
 
 #define dma_chan_irq(dma, chan) \
-	irqstr_get_sof_int(((int *)dma->plat_data.drv_plat_data)[chan])
+	irqstr_get_sof_int(((int *)dma->plat_data.drv_plat_data)[chan], false)
 #define dma_chan_irq_name(dma, chan) dma_irq_name(dma)
 
 #endif /* __PLATFORM_LIB_DMA_H__ */

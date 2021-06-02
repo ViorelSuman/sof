@@ -256,6 +256,7 @@ extern const struct dai_driver sai_driver;
 struct sai_pdata {
 	struct sof_ipc_dai_config config;
 	struct sof_ipc_dai_sai_params params;
+	int irq;
 };
 
 #endif /*__SOF_DRIVERS_SAI_H__ */
