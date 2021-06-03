@@ -69,7 +69,7 @@ static int dma_multi_chan_domain_irq_register(struct dma_domain_data *data,
 {
 	int ret;
 
-	tr_info(&ll_tr, "dma_multi_chan_domain_irq_register()");
+	tr_info(&ll_tr, "dma_multi_chan_domain_irq_register() irq=%d", data->irq);
 
 	/* always go through dma_multi_chan_domain_irq_handler,
 	 * so we have different arg registered for every channel
