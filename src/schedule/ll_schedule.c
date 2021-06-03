@@ -189,7 +189,7 @@ static void schedule_ll_tasks_run(void *data)
 	uint32_t num_clients = 0;
 	uint32_t flags;
 
-	tr_dbg(&ll_tr, "timer interrupt on core %d, at %u, previous next_tick %u",
+	tr_dbg(&ll_tr, "interrupt on core %d, at %u, previous next_tick %u",
 	       cpu_get_id(),
 	       (unsigned int)platform_timer_get_atomic(timer_get()),
 	       (unsigned int)sch->domain->next_tick);
@@ -253,7 +253,8 @@ static int schedule_ll_domain_set(struct ll_schedule_data *sch,
 	bool registered;
 	int ret;
 
-	tr_err(&ll_tr, "schedule_ll_domain_set: before register domain");
+	tr_info(&ll_tr, "schedule_ll_domain_set: before register domain type: %d",
+		sch->domain->type);
 	ret = domain_register(sch->domain, period, task, &schedule_ll_tasks_run,
 			      sch);
 	if (ret < 0) {
