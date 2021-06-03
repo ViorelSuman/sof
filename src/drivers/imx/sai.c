@@ -44,14 +44,22 @@ static void sai_start(struct dai *dai, int direction)
 	xcsr |= REG_SAI_CSR_WSF;  /* W1C, clear Word Start Flag */
 
 	dai_update_bits(dai, REG_SAI_XCSR(direction), xcsr, xcsr);
+
+#ifdef CONFIG_IMX8M
+	dai_update_bits(dai, REG_SAI_MCTL, REG_SAI_MCTL_MCLK_EN,
+			REG_SAI_MCTL_MCLK_EN);
+#endif
 }
 
 static void sai_stop(struct dai *dai, int direction)
 {
-	dai_info(dai, "SAI: sai_stop");
-
 	uint32_t xcsr = 0;
 
+	dai_info(dai, "SAI: sai_stop");
+
+#ifdef CONFIG_IMX8M
+	dai_update_bits(dai, REG_SAI_MCTL, REG_SAI_MCTL_MCLK_EN, 0);
+#endif
 	xcsr |= REG_SAI_CSR_FRDE; /* FIFO Request DMA Enable */
 	xcsr |= REG_SAI_CSR_TERE; /* Transmit Enable */
 	xcsr |= REG_SAI_CSR_SE;   /* Stop Enable */
@@ -190,19 +198,14 @@ static inline int sai_set_config(struct dai *dai,
 			REG_SAI_CR4_FSP | REG_SAI_CR4_FSD_MSTR;
 
 	dai_update_bits(dai, REG_SAI_TCR1, REG_SAI_CR1_RFW_MASK,
-			SAI_FIFO_WORD_SIZE / 2);
+			dai->plat_data.fifo[DAI_DIR_PLAYBACK].watermark);
 	dai_update_bits(dai, REG_SAI_TCR2, mask_cr2, val_cr2);
 	dai_update_bits(dai, REG_SAI_TCR4, mask_cr4, val_cr4);
-
 	dai_update_bits(dai, REG_SAI_RCR1, REG_SAI_CR1_RFW_MASK,
-			SAI_FIFO_WORD_SIZE / 2);
+			dai->plat_data.fifo[DAI_DIR_CAPTURE].watermark);
 	dai_update_bits(dai, REG_SAI_RCR2, mask_cr2, val_cr2);
 	dai_update_bits(dai, REG_SAI_RCR4, mask_cr4, val_cr4);
 
-#ifdef CONFIG_IMX8M
-	dai_update_bits(dai, REG_SAI_MCTL, REG_SAI_MCTL_MCLK_EN,
-			REG_SAI_MCTL_MCLK_EN);
-#endif
 	return 0;
 }
 
@@ -326,10 +329,13 @@ static int sai_hw_params(struct dai *dai,
 	uint32_t slots = (channels == 1) ? 2 : channels;
 	uint32_t slot_width = word_width;
 	uint32_t pins, bclk, ratio, div;
+	uint32_t tx_wm = 64 - REG_SAI_MAXBURST_TX + (rate - 48000) / 5250;
 	int ret;
 
 	dai_info(dai, "sai_hw_params(): rate: %u, channels: %u, width: %u",
 		 rate, channels, word_width);
+
+	dai_info(dai, "sai_hw_params(): tx_wm: %u", tx_wm);
 
 	if (sai->params.tdm_slots)
 		slots = sai->params.tdm_slots;
@@ -339,6 +345,12 @@ static int sai_hw_params(struct dai *dai,
 
 	pins = DIV_ROUND_UP(channels, slots);
 	bclk = rate * slots * slot_width;
+
+	if (rx)
+		dai_update_bits(dai, REG_SAI_RCR1, REG_SAI_CR1_RFW_MASK,
+				dai->plat_data.fifo[DAI_DIR_CAPTURE].watermark);
+	else
+		dai_update_bits(dai, REG_SAI_TCR1, REG_SAI_CR1_RFW_MASK, tx_wm);
 
 	if (!sai->consumer_mode) {
 		ratio = sai->params.mclk_rate / bclk;
@@ -361,7 +373,6 @@ static int sai_hw_params(struct dai *dai,
 
 	mask_cr3 = REG_SAI_CR3_TRCE_MASK;
 	val_cr3 = REG_SAI_CR3_TRCE(((1 << pins) - 1));
-	/* @todo: multiple FIFOs and datalines */
 
 	mask_cr4 = REG_SAI_CR4_SYWD_MASK | REG_SAI_CR4_FRSZ_MASK | REG_SAI_CR4_CHMOD_MASK;
 	val_cr4 |= (sai->is_dsp_mode ? 0 : REG_SAI_CR4_SYWD(slot_width));
@@ -371,7 +382,6 @@ static int sai_hw_params(struct dai *dai,
 	mask_cr5 = REG_SAI_CR5_WNW_MASK | REG_SAI_CR5_W0W_MASK | REG_SAI_CR5_FBT_MASK;
 	val_cr5  = REG_SAI_CR5_WNW(slot_width) | REG_SAI_CR5_W0W(slot_width);
 	val_cr5 |= REG_SAI_CR5_FBT(word_width);
-
 	dai_update_bits(dai, REG_SAI_XCR3(rx), mask_cr3, val_cr3);
 	dai_update_bits(dai, REG_SAI_XCR4(rx), mask_cr4, val_cr4);
 	dai_update_bits(dai, REG_SAI_XCR5(rx), mask_cr5, val_cr5);
