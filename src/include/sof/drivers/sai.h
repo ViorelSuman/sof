@@ -243,12 +243,8 @@
 #define SAI_FIFO_WORD_SIZE	64
 #endif
 
-/* Divides down the audio main clock to generate the bit clock when
- * configured for an internal bit clock.
- * The division value is (DIV + 1) * 2.
- */
-#define SAI_CLOCK_DIV		0x7
-#define SAI_TDM_SLOTS		2
+#define sai_irq(sai) sai->plat_data.irq
+#define sai_irq_name(sai) sai->plat_data.irq_name
 
 extern const struct dai_driver sai_driver;
 
@@ -256,6 +252,9 @@ extern const struct dai_driver sai_driver;
 struct sai_pdata {
 	struct sof_ipc_dai_config config;
 	struct sof_ipc_dai_sai_params params;
+	bool consumer_mode;
+	bool is_dsp_mode;
+	int irq;
 };
 
 #endif /*__SOF_DRIVERS_SAI_H__ */
