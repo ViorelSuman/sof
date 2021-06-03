@@ -33,17 +33,17 @@ dnl     pcm_min_rate, pcm_max_rate, pipeline_rate,
 dnl     time_domain, sched_comp, dynamic)
 
 # Low Latency playback pipeline 1 on PCM 0 using max 8 channels of s32le.
-# Set 1000us deadline on core 0 with priority 0
+# Set 500us deadline on core 0 with priority 0
 PIPELINE_PCM_ADD(sof/pipe-passthrough-playback.m4,
 	1, 0, 2, s32le,
-	1000, 0, 0,
+	500, 0, 0,
 	8000, 768000, 768000)
 
 # Low Latency capture pipeline 2 on PCM 0 using max 2 channels of s32le.
-# Set 1000us deadline on core 0 with priority 0
+# Set 500us deadline on core 0 with priority 0
 PIPELINE_PCM_ADD(sof/pipe-passthrough-capture.m4,
 	2, 0, 2, s32le,
-	1000, 0, 0,
+	500, 0, 0,
 	8000, 768000, 768000)
 #
 # DAIs configuration
@@ -55,18 +55,18 @@ dnl     buffer, periods, format,
 dnl     period, priority, core, time_domain)
 
 # playback DAI is SAI1 using 2 periods
-# Buffers use s32le format, 1000us on core 0 with priority 0
+# Buffers use s32le format, 500us on core 0 with priority 0
 DAI_ADD(sof/pipe-dai-playback.m4,
 	1, SAI, 1, sai1-ak4458-aif,
 	PIPELINE_SOURCE_1, 2, s32le,
-	1000, 0, 0, SCHEDULE_TIME_DOMAIN_DMA)
+	500, 0, 0, SCHEDULE_TIME_DOMAIN_DMA)
 
 # capture DAI is SAI3 using 2 periods
-# Buffers use s32le format, 1000us on core 0 with priority 0
+# Buffers use s32le format, 500us on core 0 with priority 0
 DAI_ADD(sof/pipe-dai-capture.m4,
 	2, SAI, 3, sai3-ak5558-aif,
 	PIPELINE_SINK_2, 2, s32le,
-	1000, 0, 0, SCHEDULE_TIME_DOMAIN_DMA)
+	500, 0, 0, SCHEDULE_TIME_DOMAIN_DMA)
 
 # PCM Low Latency, id 0
 
