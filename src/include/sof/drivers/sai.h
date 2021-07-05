@@ -237,23 +237,24 @@
 
 #define SAI_FLAG_PMQOS   BIT(0)
 
-#ifdef CONFIG_IMX8M
-#define SAI_FIFO_WORD_SIZE	128
-#else
-#define SAI_FIFO_WORD_SIZE	64
-#endif
-
 #define sai_irq(sai) sai->plat_data.irq
 #define sai_irq_name(sai) sai->plat_data.irq_name
 
 extern const struct dai_driver sai_driver;
 
+enum sai_sync_mode {
+	SAI_ASYNC = 0,		/* asynchronous RX and TX */
+	SAI_SYNC_ON_TX = 1,	/* RX synchronized on TX */
+	SAI_SYNC_ON_RX = 2,	/* TX synchronized on RX */
+};
+
 /* SAI private data */
 struct sai_pdata {
 	struct sof_ipc_dai_config config;
 	struct sof_ipc_dai_sai_params params;
+	enum sai_sync_mode sync_mode;
 	bool consumer_mode;
-	bool is_dsp_mode;
+	bool dsp_mode;
 	int irq;
 };
 

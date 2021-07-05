@@ -24,15 +24,30 @@ DECLARE_SOF_UUID("sai", sai_uuid, 0x9302adf5, 0x88be, 0x4234,
 
 DECLARE_TR_CTX(sai_tr, SOF_UUID(sai_uuid), LOG_LEVEL_INFO);
 
+static bool sai_dir_is_synced(struct sai_pdata *sai, bool rx)
+{
+	if (rx)
+		return (sai->sync_mode == SAI_SYNC_ON_TX);
+	else
+		return (sai->sync_mode == SAI_SYNC_ON_RX);
+}
+
 static void sai_start(struct dai *dai, int direction)
 {
-	uint32_t xrd0 = (direction == DAI_DIR_PLAYBACK ? REG_SAI_TDR0 : REG_SAI_RDR0);
+	struct sai_pdata *sai = dai_get_drvdata(dai);
+	bool rx = (direction == DAI_DIR_CAPTURE);
+	uint32_t xrd0 = (rx ? REG_SAI_RDR0 : REG_SAI_TDR0);
 	uint32_t xcsr = 0;
 
-	dai_info(dai, "SAI: sai_start");
+	dai_info(dai, "SAI: sai_start %cX", rx ? 'R' : 'T');
 
 	/* add one word to FIFO before TRCE is enabled */
 	dai_write(dai, xrd0, 0x0);
+
+	dai_update_bits(dai, REG_SAI_RCR2, REG_SAI_CR2_SYNC_MASK,
+			sai_dir_is_synced(sai, true) ? REG_SAI_CR2_SYNC : 0);
+	dai_update_bits(dai, REG_SAI_TCR2, REG_SAI_CR2_SYNC_MASK,
+			sai_dir_is_synced(sai, false) ? REG_SAI_CR2_SYNC : 0);
 
 	xcsr |= REG_SAI_CSR_FRDE; /* FIFO Request DMA Enable */
 	xcsr |= REG_SAI_CSR_TERE; /* Transmit Enable */
@@ -43,33 +58,73 @@ static void sai_start(struct dai *dai, int direction)
 	xcsr |= REG_SAI_CSR_SEF;  /* W1C, clear Sync Error Flag */
 	xcsr |= REG_SAI_CSR_WSF;  /* W1C, clear Word Start Flag */
 
-	dai_update_bits(dai, REG_SAI_XCSR(direction), xcsr, xcsr);
+	dai_update_bits(dai, REG_SAI_XCSR(rx), xcsr, xcsr);
 
+	if (sai_dir_is_synced(sai, rx))
+		dai_update_bits(dai, REG_SAI_XCSR(!rx), REG_SAI_CSR_TERE,
+				REG_SAI_CSR_TERE);
 #ifdef CONFIG_IMX8M
 	dai_update_bits(dai, REG_SAI_MCTL, REG_SAI_MCTL_MCLK_EN,
 			REG_SAI_MCTL_MCLK_EN);
 #endif
 }
 
+static void sai_dir_disable(struct dai *dai, bool rx)
+{
+	struct sai_pdata *sai = dai_get_drvdata(dai);
+	int ret;
+
+	dai_update_bits(dai, REG_SAI_XCSR(rx), REG_SAI_CSR_TERE, 0);
+	ret = poll_for_register_delay(dai_base(dai) + REG_SAI_XCSR(rx),
+				      REG_SAI_CSR_TERE, 0, 100);
+	if (ret < 0)
+		dai_warn(dai, "sai: poll for register delay failed");
+
+	dai_update_bits(dai, REG_SAI_XCSR(rx), REG_SAI_CSR_FR, REG_SAI_CSR_FR);
+
+	if (!sai->consumer_mode) {
+		/* Software Reset */
+		dai_update_bits(dai, REG_SAI_XCSR(rx), REG_SAI_CSR_SR, REG_SAI_CSR_SR);
+		/* Clear SR bit to finish the reset */
+		dai_update_bits(dai, REG_SAI_XCSR(rx), REG_SAI_CSR_SR, 0U);
+	}
+}
+
 static void sai_stop(struct dai *dai, int direction)
 {
-	uint32_t xcsr = 0;
+	struct sai_pdata *sai = dai_get_drvdata(dai);
+	bool rx = (direction == DAI_DIR_CAPTURE);
+	uint32_t xcsr = 0U;
 
-	dai_info(dai, "SAI: sai_stop");
+	dai_info(dai, "SAI: sai_stop %cX", rx ? 'R' : 'T');
 
 #ifdef CONFIG_IMX8M
 	dai_update_bits(dai, REG_SAI_MCTL, REG_SAI_MCTL_MCLK_EN, 0);
 #endif
 	xcsr |= REG_SAI_CSR_FRDE; /* FIFO Request DMA Enable */
-	xcsr |= REG_SAI_CSR_TERE; /* Transmit Enable */
 	xcsr |= REG_SAI_CSR_SE;   /* Stop Enable */
 	xcsr |= REG_SAI_CSR_SEIE; /* Sync Error Interrupt Enable */
 	xcsr |= REG_SAI_CSR_FEIE; /* FIFO Error Interrupt Enable */
 
-	dai_update_bits(dai, REG_SAI_XCSR(direction), xcsr, 0);
+	dai_update_bits(dai, REG_SAI_XCSR(rx), xcsr, 0);
 
-	poll_for_register_delay(dai_base(dai) + REG_SAI_XCSR(direction),
-						REG_SAI_CSR_TERE, 0, 100);
+	/* Check if the opposite direction is also disabled */
+	xcsr = dai_read(dai, REG_SAI_XCSR(!rx));
+
+	/*
+	 * Disable the opposite stream if:
+	 * 1. it provides clocks for synchronous mode for current stream and,
+	 * 2. is inactive, ie: ended before current stream
+	 */
+	if (sai_dir_is_synced(sai, rx) && !(xcsr & REG_SAI_CSR_FRDE))
+		sai_dir_disable(dai, !rx);
+	/*
+	 * Disable current stream if:
+	 * 1. it does not provide clocks for synchronous mode for opposite stream or,
+	 * 2. the opposite stream is inactive, ie: ended before current stream
+	 */
+	if (!sai_dir_is_synced(sai, !rx) || !(xcsr & REG_SAI_CSR_FRDE))
+		sai_dir_disable(dai, rx);
 }
 
 static int sai_context_store(struct dai *dai)
@@ -94,7 +149,7 @@ static inline int sai_set_config(struct dai *dai,
 	sai->params = config->sai;
 
 	val_cr4 |= REG_SAI_CR4_MF;
-	sai->is_dsp_mode = false;
+	sai->dsp_mode = false;
 
 	switch (config->format & SOF_DAI_FMT_FORMAT_MASK) {
 	case SOF_DAI_FMT_I2S:
@@ -123,7 +178,7 @@ static inline int sai_set_config(struct dai *dai,
 		 */
 		val_cr2 |= REG_SAI_CR2_BCP;
 		val_cr4 |= REG_SAI_CR4_FSE;
-		sai->is_dsp_mode = true;
+		sai->dsp_mode = true;
 		break;
 	case SOF_DAI_FMT_DSP_B:
 		/*
@@ -131,15 +186,15 @@ static inline int sai_set_config(struct dai *dai,
 		 * frame sync asserts with the first bit of the frame.
 		 */
 		val_cr2 |= REG_SAI_CR2_BCP;
-		sai->is_dsp_mode = true;
+		sai->dsp_mode = true;
 		break;
 	case SOF_DAI_FMT_PDM:
 		val_cr2 |= REG_SAI_CR2_BCP;
 		val_cr4 &= ~REG_SAI_CR4_MF;
-		sai->is_dsp_mode = true;
+		sai->dsp_mode = true;
 		break;
 	case SOF_DAI_FMT_RIGHT_J:
-		/* To be done */
+		/* To be done, currently not supported */
 	default:
 		return -EINVAL;
 	}
@@ -201,6 +256,7 @@ static inline int sai_set_config(struct dai *dai,
 			dai->plat_data.fifo[DAI_DIR_PLAYBACK].watermark);
 	dai_update_bits(dai, REG_SAI_TCR2, mask_cr2, val_cr2);
 	dai_update_bits(dai, REG_SAI_TCR4, mask_cr4, val_cr4);
+
 	dai_update_bits(dai, REG_SAI_RCR1, REG_SAI_CR1_RFW_MASK,
 			dai->plat_data.fifo[DAI_DIR_CAPTURE].watermark);
 	dai_update_bits(dai, REG_SAI_RCR2, mask_cr2, val_cr2);
@@ -249,6 +305,12 @@ static int sai_probe(struct dai *dai)
 		return -ENOMEM;
 	}
 	dai_set_drvdata(dai, sai);
+
+	/**
+	 * Synchronize RX on TX by default
+	 * @todo: to provide via topology and sai_set_config
+	 */
+	sai->sync_mode = SAI_SYNC_ON_TX;
 
 	/* Software Reset for both Tx and Rx */
 	dai_update_bits(dai, REG_SAI_TCSR, REG_SAI_CSR_SR, REG_SAI_CSR_SR);
@@ -302,20 +364,6 @@ static int sai_get_hw_params(struct dai *dai,
 	return 0;
 }
 
-static int sai_get_word_width(enum sof_ipc_frame fmt)
-{
-	switch (fmt) {
-	case SOF_IPC_FRAME_S16_LE:
-		return 16;
-	case SOF_IPC_FRAME_S24_4LE:
-		return 24;
-	case SOF_IPC_FRAME_S32_LE:
-		return 32;
-	default:
-		return -EINVAL;
-	}
-}
-
 static int sai_hw_params(struct dai *dai,
 			 struct sof_ipc_stream_params *params)
 {
@@ -325,26 +373,27 @@ static int sai_hw_params(struct dai *dai,
 	bool rx = (params->direction == DAI_DIR_CAPTURE);
 	uint32_t rate = params->rate;
 	uint32_t channels = params->channels;
-	uint32_t word_width = sai_get_word_width(params->frame_fmt);
+	uint32_t word_width = 8 * get_sample_bytes(params->frame_fmt);
 	uint32_t val_cr2 = 0, val_cr3 = 0, val_cr4 = 0, val_cr5 = 0;
 	uint32_t mask_cr2 = 0, mask_cr3 = 0, mask_cr4 = 0, mask_cr5 = 0;
 	uint32_t slots = (channels == 1) ? 2 : channels;
 	uint32_t slot_width = word_width;
 	uint32_t pins, bclk, ratio, div;
 	uint32_t tx_wm = dai->plat_data.fifo[DAI_DIR_PLAYBACK].depth;
-	int ret;
 
 	tx_wm = tx_wm / (rate > 96000 ? 1 : 2) - REG_SAI_MAXBURST_TX;
 
-	dai_info(dai, "sai_hw_params(): rate: %u, channels: %u, width: %u",
-		 rate, channels, word_width);
+	dai_info(dai, "sai_hw_params(%cX): rate: %u, channels: %u, width: %u",
+		 rx ? 'R' : 'T', rate, channels, word_width);
 
 	dai_info(dai, "sai_hw_params(): tx_wm: %u", tx_wm);
 	dai_info(dai, "sai_hw_params(): dd->config.cyclic: %u", dd->config.cyclic);
 
+	/* Overwrite the number of slots with value from topology if != 0 */
 	if (sai->params.tdm_slots)
 		slots = sai->params.tdm_slots;
 
+	/* Overwrite the slot width with value from topology if != 0 */
 	if (sai->params.tdm_slot_width)
 		slot_width = sai->params.tdm_slot_width;
 
@@ -357,30 +406,11 @@ static int sai_hw_params(struct dai *dai,
 	else
 		dai_update_bits(dai, REG_SAI_TCR1, REG_SAI_CR1_RFW_MASK, tx_wm);
 
-	if (!sai->consumer_mode) {
-		ratio = sai->params.mclk_rate / bclk;
-		ret = sai->params.mclk_rate - ratio * bclk;
-		div = (ratio == 1 ? 0 : (ratio >> 1) - 1);
-
-		dai_info(dai, "sai_hw_params(): mclk: %u, bclk: %u, ratio: %u",
-			 sai->params.mclk_rate, bclk, ratio);
-		dai_info(dai, "sai_hw_params(): ret: %d, div: %u, pins: %u",
-			 ret, div, pins);
-
-		mask_cr2 = REG_SAI_CR2_MSEL_MASK | REG_SAI_CR2_DIV_MASK;
-		val_cr2  = REG_SAI_CR2_MSEL_MCLK1 | div;
-#ifdef CONFIG_IMX8M
-		mask_cr2 |= REG_SAI_CR2_BYP;
-		val_cr2  |= (ratio == 1 ? REG_SAI_CR2_BYP : 0);
-#endif
-		dai_update_bits(dai, REG_SAI_XCR2(rx), mask_cr2, val_cr2);
-	}
-
 	mask_cr3 = REG_SAI_CR3_TRCE_MASK;
 	val_cr3 = REG_SAI_CR3_TRCE(((1 << pins) - 1));
 
 	mask_cr4 = REG_SAI_CR4_SYWD_MASK | REG_SAI_CR4_FRSZ_MASK | REG_SAI_CR4_CHMOD_MASK;
-	val_cr4 |= (sai->is_dsp_mode ? 0 : REG_SAI_CR4_SYWD(slot_width));
+	val_cr4 |= (sai->dsp_mode ? 0 : REG_SAI_CR4_SYWD(slot_width));
 	val_cr4 |= REG_SAI_CR4_FRSZ(slots);
 	val_cr4 |= (rx ? 0 : REG_SAI_CR4_CHMOD);
 
@@ -392,6 +422,33 @@ static int sai_hw_params(struct dai *dai,
 	dai_update_bits(dai, REG_SAI_XCR5(rx), mask_cr5, val_cr5);
 	dai_update_bits(dai, REG_SAI_XMR(rx), REG_SAI_XMR_MASK,
 			~0UL - ((1 << MIN(channels, slots)) - 1));
+
+	if (sai->consumer_mode)
+		return 0;
+
+	/* The following section configures SAI clocks provider mode */
+	ratio = sai->params.mclk_rate / bclk;
+	div = (ratio == 1 ? 0 : (ratio >> 1) - 1);
+
+	mask_cr2 = REG_SAI_CR2_MSEL_MASK | REG_SAI_CR2_DIV_MASK;
+	val_cr2  = REG_SAI_CR2_MSEL_MCLK1 | div;
+#ifdef CONFIG_IMX8M
+	mask_cr2 |= REG_SAI_CR2_BYP;
+	val_cr2  |= (ratio == 1 ? REG_SAI_CR2_BYP : 0);
+#endif
+
+	if (sai_dir_is_synced(sai, rx)) {
+		dai_update_bits(dai, REG_SAI_XCR2(rx), mask_cr2, 0);
+		dai_update_bits(dai, REG_SAI_XCR2(!rx), mask_cr2, val_cr2);
+
+		dai_update_bits(dai, REG_SAI_XCR1(!rx), REG_SAI_CR1_RFW_MASK,
+				dai->plat_data.fifo[(params->direction + 1) % 2].watermark);
+		dai_update_bits(dai, REG_SAI_XCR4(!rx), mask_cr4, val_cr4);
+		dai_update_bits(dai, REG_SAI_XCR5(!rx), mask_cr5, val_cr5);
+	} else {
+		dai_update_bits(dai, REG_SAI_XCR2(rx), mask_cr2, val_cr2);
+	}
+
 	return 0;
 }
 
